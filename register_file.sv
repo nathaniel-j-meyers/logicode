@@ -23,40 +23,35 @@ module reg_file #(
   // your code here
 
 
-    // Data array: no reset, so it can map to LUT RAM or block RAM
-    reg [WIDTH-1:0] mem   [0:DEPTH-1];
-    // Only these flags are reset
-    reg [DEPTH-1:0] wrote;
+    reg [WIDTH-1:0] mem   [0:DEPTH-1];       // array of flip-flops
+    reg [DEPTH-1:0] wrote;                   // per-entry "has been written" flag
 
-    wire in_range = (addr < DEPTH);          // constant true when DEPTH is a power of 2
-    wire both     = rd & wr;
-    wire do_wr    = wr & ~rd & in_range;
-    wire do_rd    = rd & ~wr & in_range;
+    wire in_range = (addr < DEPTH);
 
-    // Data storage: plain write port, no reset and no reset mux in front of the flops
-    always @(posedge clk) begin
-        if (resetn && do_wr)
-            mem[addr] <= din;
-    end
+    integer i;
 
-    // Written flags: the only per-entry state that needs a reset
-    always @(posedge clk) begin
-        if (!resetn)
-            wrote <= {DEPTH{1'b0}};
-        else if (do_wr)
-            wrote[addr] <= 1'b1;
-    end
-
-    // Registered outputs
     always @(posedge clk) begin
         if (!resetn) begin
+            for (i = 0; i < DEPTH; i = i + 1) mem[i] <= {WIDTH{1'b0}};
+            wrote <= {DEPTH{1'b0}};
             dout  <= {WIDTH{1'b0}};
             error <= 1'b0;
         end else begin
-            error <= both;
-            dout  <= (do_rd && wrote[addr]) ? mem[addr] : {WIDTH{1'b0}};
+            dout  <= {WIDTH{1'b0}};          // default: 0 unless a valid read occurs
+            error <= 1'b0;
+
+            if (rd && wr) begin
+                error <= 1'b1;               // invalid: both at once, nothing is written
+            end else if (wr) begin
+                if (in_range) begin
+                    mem[addr]   <= din;
+                    wrote[addr] <= 1'b1;
+                end
+            end else if (rd) begin
+                if (in_range && wrote[addr])
+                    dout <= mem[addr];       // never-written address leaves dout = 0, error = 0
+            end
         end
     end
-
 
 endmodule
